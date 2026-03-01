@@ -18,3 +18,5 @@ mod:
     enabled: true
   sys_transaction_cost:
     enabled: true
+  trade_viewer:
+    enabled: true

@@ -35,7 +35,7 @@ from .entry import cli
 @click.option('-a', '--account', 'base__accounts', nargs=2, multiple=True,
               help="set account type with starting cash, eg: -a stock 1000000 -a future 1000000")
 @click.option('--position', 'base__init_positions', type=click.STRING, help="set init position")
-@click.option('-fq', '--frequency', 'base__frequency', type=click.Choice(['1d', '1m', 'tick']))
+@click.option('-fq', '--frequency', 'base__frequency', type=click.STRING)
 @click.option('-rt', '--run-type', 'base__run_type', type=click.Choice(['b', 'p', 'r']), default="b")
 @click.option('-rp', '--round-price', 'base__round_price', is_flag=True)
 @click.option('--source-code', 'base__source_code')

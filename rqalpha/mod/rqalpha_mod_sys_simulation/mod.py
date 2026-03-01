@@ -70,7 +70,8 @@ class SimulationMod(AbstractMod):
         if mod_config.management_fee:
             env.event_bus.add_listener(EVENT.POST_SYSTEM_INIT, self.register_management_fee_calculator)
 
-        event_source = SimulationEventSource(env)
+        market = getattr(mod_config, 'market', 'cn')
+        event_source = SimulationEventSource(env, market=market)
         env.set_event_source(event_source)
 
         from .validator import OrderStyleValidator
@@ -83,12 +84,12 @@ class SimulationMod(AbstractMod):
     def parse_matching_type(me_str, frequency):
         if me_str is None:
             # None 表示根据 frequency 自动选择
-            if frequency in ["1d", "1m"]:
-                me_str = "current_bar"
-            elif frequency == "tick":
+            if frequency == "tick":
                 me_str = "last"
+            elif frequency == "1d" or frequency.endswith("m"):
+                me_str = "current_bar"
             else:
-                raise ValueError("frequency only support ['1d', '1m', 'tick']")
+                raise ValueError("frequency only support ['1d', '1m', '15m', 'tick', ...]")
 
         assert isinstance(me_str, six.string_types)
         me_str = me_str.lower()

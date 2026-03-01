@@ -103,4 +103,6 @@ SYSTEM_MOD_LIST = [
     "sys_simulation",
     "sys_transaction_cost",
     'sys_scheduler',
+    "futu",
+    "trade_viewer",
 ]

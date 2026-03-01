@@ -1,0 +1,30 @@
+# 港股新股突破策略配置示例
+# 使用方法：
+#   rqalpha run -f strategies/hk_new_stock_breakout.py \
+#       -s 2026-01-29 -e 2026-02-28 \
+#       -fq 15m -a stock 1000000 \
+#       --config strategies/hk_breakout_config.yml \
+#       --view
+
+mod:
+  futu:
+    enabled: true
+    host: "127.0.0.1"
+    port: 11112
+    api_delay: 0.3
+    trade_env: "SIMULATE"
+    trade_password: ""
+    trade_account: 0
+  sys_simulation:
+    enabled: true
+    market: hk
+  sys_risk:
+    enabled: false
+  sys_transaction_cost:
+    enabled: false
+
+extra:
+  log_level: info
+  context_vars:
+    stop_loss_method: 1   # 1=首日低/固定止损, 2=日线MA5, 3=两者都用
+    new_stock_days: 60    # 自动发现近 60 天新股

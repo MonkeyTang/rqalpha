@@ -17,6 +17,8 @@ import click
 from rqalpha import cli
 
 __config__ = {
+    # 交易市场，影响交易时间段和日历类型。可选值：'cn'（A 股）、'hk'（港股）
+    "market": "cn",
     # 开启信号模式：该模式下，所有通过风控的订单将不进行撮合，直接产生交易
     "signal": False,
     # 撮合方式，其中：

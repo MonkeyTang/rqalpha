@@ -26,19 +26,33 @@ from rqalpha.const import DEFAULT_ACCOUNT_TYPE, INSTRUMENT_TYPE
 from rqalpha.utils.i18n import gettext as _
 
 
+
 class SimulationEventSource(AbstractEventSource):
-    def __init__(self, env):
-        # type: (Environment) -> None
+    def __init__(self, env, market='cn'):
+        # type: (Environment, str) -> None
         self._env = env
         self._config = env.config
         self._universe_changed = False
         self._env.event_bus.add_listener(EVENT.POST_UNIVERSE_CHANGED, self._on_universe_changed)
+        self._market = market
 
-        self._get_day_bar_dt = lambda date: date.replace(hour=15, minute=0)
-        self._get_after_trading_dt = lambda date: date.replace(hour=15, minute=30)
+        if market == 'hk':
+            self._get_day_bar_dt = lambda date: date.replace(hour=16, minute=0)
+            self._get_after_trading_dt = lambda date: date.replace(hour=16, minute=30)
+        else:
+            self._get_day_bar_dt = lambda date: date.replace(hour=15, minute=0)
+            self._get_after_trading_dt = lambda date: date.replace(hour=15, minute=30)
 
     def _on_universe_changed(self, _):
         self._universe_changed = True
+
+    def _get_trading_dates(self, start_date, end_date):
+        """根据市场类型获取交易日历。HK 市场优先使用数据源的 HK 日历。"""
+        if self._market == 'hk':
+            ds = getattr(self._env, 'data_source', None)
+            if ds is not None and hasattr(ds, 'get_hk_trading_dates'):
+                return ds.get_hk_trading_dates(start_date, end_date)
+        return self._env.data_proxy.get_trading_dates(start_date, end_date)
 
     def _get_universe(self):
         universe = self._env.get_universe()
@@ -49,23 +63,25 @@ class SimulationEventSource(AbstractEventSource):
         return universe
 
     # [BEGIN] minute event helper
-    def _get_stock_trading_minutes(self, trading_date):
+    def _get_stock_trading_minutes(self, trading_date, step_minutes=1):
+        """返回当日股票交易时段的时间点集合，支持 step_minutes 步长（如 15）。
+        HK：09:30-12:00, 13:00-16:00；CN：09:31-11:30, 13:01-15:00。
+        """
+        delta = timedelta(minutes=step_minutes)
+        if self._market == 'hk':
+            sessions = [(time(9, 30), time(12, 0)), (time(13, 0), time(16, 0))]
+        else:
+            sessions = [(time(9, 31), time(11, 30)), (time(13, 1), time(15, 0))]
+
         trading_minutes = set()
-
-        current_dt = datetime.combine(trading_date, time(9, 31))
-        am_end_dt = current_dt.replace(hour=11, minute=30)
-        pm_start_dt = current_dt.replace(hour=13, minute=1)
-        pm_end_dt = current_dt.replace(hour=15, minute=0)
-
-        delta_minute = timedelta(minutes=1)
-        while current_dt <= am_end_dt:
-            trading_minutes.add(current_dt)
-            current_dt += delta_minute
-
-        current_dt = pm_start_dt
-        while current_dt <= pm_end_dt:
-            trading_minutes.add(current_dt)
-            current_dt += delta_minute
+        for start_t, end_t in sessions:
+            current_dt = datetime.combine(trading_date, start_t)
+            if step_minutes > 1:
+                current_dt += delta   # 首根 bar 结束时刻 = 开盘 + step
+            end_dt = datetime.combine(trading_date, end_t)
+            while current_dt <= end_dt:
+                trading_minutes.add(current_dt)
+                current_dt += delta
         return trading_minutes
 
     def _get_future_trading_minutes(self, trading_date):
@@ -77,18 +93,19 @@ class SimulationEventSource(AbstractEventSource):
             trading_minutes.update(self._env.data_proxy.get_trading_minutes_for(order_book_id, trading_date))
         return set([convert_int_to_datetime(minute) for minute in trading_minutes])
 
-    def _get_trading_minutes(self, trading_date):
+    def _get_trading_minutes(self, trading_date, step_minutes=1):
         trading_minutes = set()
         for account_type in self._config.base.accounts:
             if account_type == DEFAULT_ACCOUNT_TYPE.STOCK:
-                trading_minutes = trading_minutes.union(self._get_stock_trading_minutes(trading_date))
+                trading_minutes = trading_minutes.union(
+                    self._get_stock_trading_minutes(trading_date, step_minutes))
             elif account_type == DEFAULT_ACCOUNT_TYPE.FUTURE:
                 trading_minutes = trading_minutes.union(self._get_future_trading_minutes(trading_date))
         return sorted(list(trading_minutes))
     # [END] minute event helper
 
     def events(self, start_date, end_date, frequency):
-        trading_dates = self._env.data_proxy.get_trading_dates(start_date, end_date)
+        trading_dates = self._get_trading_dates(start_date, end_date)
         if frequency == "1d":
             # 根据起始日期和结束日期，获取所有的交易日，然后再循环获取每一个交易日
             for day in trading_dates:
@@ -102,7 +119,8 @@ class SimulationEventSource(AbstractEventSource):
                 yield Event(EVENT.OPEN_AUCTION, calendar_dt=dt_before_trading, trading_dt=dt_before_trading)
                 yield Event(EVENT.BAR, calendar_dt=dt_bar, trading_dt=dt_bar)
                 yield Event(EVENT.AFTER_TRADING, calendar_dt=dt_after_trading, trading_dt=dt_after_trading)
-        elif frequency == '1m':
+        elif frequency in ('1m', '15m'):
+            step_minutes = 15 if frequency == '15m' else 1
             for day in trading_dates:
                 before_trading_flag = True
                 date = day.to_pydatetime()
@@ -115,7 +133,7 @@ class SimulationEventSource(AbstractEventSource):
                     if done:
                         break
                     exit_loop = True
-                    trading_minutes = self._get_trading_minutes(date)
+                    trading_minutes = self._get_trading_minutes(date, step_minutes)
                     for calendar_dt in trading_minutes:
                         if last_dt is not None and calendar_dt < last_dt:
                             continue
